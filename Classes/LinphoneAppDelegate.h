@@ -25,7 +25,7 @@
 #import <UserNotifications/UserNotifications.h>
 #import <UserNotificationsUI/UserNotificationsUI.h>
 
-@interface LinphoneAppDelegate : NSObject <UIApplicationDelegate, PKPushRegistryDelegate, UNUserNotificationCenterDelegate> {
+@interface LinphoneAppDelegate : NSObject <UIApplicationDelegate, UNUserNotificationCenterDelegate> {
     @private
 	UIBackgroundTaskIdentifier bgStartId;
     BOOL startedInBackground;
@@ -36,7 +36,6 @@
 @property (nonatomic, retain) UIAlertController *waitingIndicator;
 @property (nonatomic, retain) NSString *configURL;
 @property (nonatomic, strong) UIWindow* window;
-@property PKPushRegistry* voipRegistry;
 @property ProviderDelegate *del;
 @property BOOL alreadyRegisteredForNotification;
 @property BOOL onlyPortrait;

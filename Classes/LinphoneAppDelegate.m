@@ -150,13 +150,6 @@
 		return;
 
 	_alreadyRegisteredForNotification = true;
-	self.voipRegistry = [[PKPushRegistry alloc] initWithQueue:dispatch_get_main_queue()];
-	self.voipRegistry.delegate = self;
-
-	// Initiate registration.
-	LOGI(@"[PushKit] Connecting for push notifications");
-	self.voipRegistry.desiredPushTypes = [NSSet setWithObject:PKPushTypeVoIP];
-
 	[self configureUINotification];
 }
 
@@ -304,24 +297,6 @@
 	LinphoneManager.instance.conf = TRUE;
 	linphone_core_terminate_all_calls(LC);
 
-	// !!! Will be removed after push notification job finished
-	// destroyLinphoneCore automatically unregister proxies but if we are using
-	// remote push notifications, we want to continue receiving them
-	if (LinphoneManager.instance.pushNotificationToken != nil) {
-		// trick me! setting network reachable to false will avoid sending unregister
-		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
-		BOOL pushNotifEnabled = NO;
-		while (proxies) {
-			const char *refkey = linphone_proxy_config_get_ref_key(proxies->data);
-			pushNotifEnabled = pushNotifEnabled || (refkey && strcmp(refkey, "push_notification") == 0);
-			proxies = proxies->next;
-		}
-		// but we only want to hack if at least one proxy config uses remote push..
-		if (pushNotifEnabled) {
-			linphone_core_set_network_reachable(LC, FALSE);
-		}
-	}
-
 	[LinphoneManager.instance destroyLinphoneCore];
 }
 
@@ -409,93 +384,6 @@
 	}
 }
 
-- (void)processRemoteNotification:(NSDictionary *)userInfo {
-	if (linphone_core_get_calls(LC)) {
-		// if there are calls, obviously our TCP socket shall be working
-		LOGD(@"Notification [%p] has no need to be processed because there already is an active call.", userInfo);
-		return;
-	}
-
-	NSDictionary *aps = [userInfo objectForKey:@"aps"];
-	if (!aps) {
-		LOGE(@"Notification [%p] was empy, it's impossible to process it.", userInfo);
-		return;
-	}
-
-	NSString *loc_key = [aps objectForKey:@"loc-key"] ?: [[aps objectForKey:@"alert"] objectForKey:@"loc-key"];
-	if (!loc_key) {
-		LOGE(@"Notification [%p] has no loc_key, it's impossible to process it.", userInfo);
-		return;
-	}
-
-	NSString *uuid = [NSString stringWithFormat:@"<urn:uuid:%@>", [LinphoneManager.instance lpConfigStringForKey:@"uuid" inSection:@"misc" withDefault:NULL]];
-	NSString *sipInstance = [aps objectForKey:@"uuid"];
-	if (sipInstance && uuid && ![sipInstance isEqualToString:uuid]) {
-		LOGE(@"Notification [%p] was intended for another device, ignoring it.", userInfo);
-		LOGD(@"My sip instance is: [%@], push was intended for: [%@].", uuid, sipInstance);
-		return;
-	}
-
-	NSString *callId = [aps objectForKey:@"call-id"] ?: @"";
-	if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive && [self addLongTaskIDforCallID:callId])
-		[LinphoneManager.instance startPushLongRunningTask:loc_key callId:callId];
-
-	// if we receive a push notification, it is probably because our TCP background socket was no more working.
-	// As a result, break it and refresh registers in order to make sure to receive incoming INVITE or MESSAGE
-	if (!linphone_core_is_network_reachable(LC)) {
-		LOGI(@"Notification [%p] network is down, restarting it.", userInfo);
-	}
-
-	if ([callId isEqualToString:@""]) {
-		// Present apn pusher notifications for info
-		LOGD(@"Notification [%p] came from flexisip-pusher.", userInfo);
-		if (floor(NSFoundationVersionNumber) > NSFoundationVersionNumber_iOS_9_x_Max) {
-			UNMutableNotificationContent* content = [[UNMutableNotificationContent alloc] init];
-			content.title = @"APN Pusher";
-			content.body = @"Push notification received !";
-
-			UNNotificationRequest *req = [UNNotificationRequest requestWithIdentifier:@"call_request" content:content trigger:NULL];
-			[[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:req withCompletionHandler:^(NSError * _Nullable error) {
-				// Enable or disable features based on authorization.
-				if (error) {
-					LOGD(@"Error while adding notification request :");
-					LOGD(error.description);
-				}
-			}];
-		} else {
-			UILocalNotification *notification = [[UILocalNotification alloc] init];
-			notification.repeatInterval = 0;
-			notification.alertBody = @"Push notification received !";
-			notification.alertTitle = @"APN Pusher";
-			[[UIApplication sharedApplication] presentLocalNotificationNow:notification];
-		}
-	} else
-		[LinphoneManager.instance addPushCallId:callId];
-
-    LOGI(@"Notification [%p] processed", userInfo);
-}
-
-- (BOOL)addLongTaskIDforCallID:(NSString *)callId {
-	if (!callId)
-		return FALSE;
-
-	if ([callId isEqualToString:@""])
-		return FALSE;
-
-	NSDictionary *dict = LinphoneManager.instance.pushDict;
-	if ([[dict allKeys] indexOfObject:callId] != NSNotFound)
-		return FALSE;
-
-	LOGI(@"Adding long running task for call id : %@ with index : 1", callId);
-	[dict setValue:[NSNumber numberWithInt:1] forKey:callId];
-	return TRUE;
-}
-
-- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo {
-	LOGI(@"%@ : %@", NSStringFromSelector(_cmd), userInfo);
-	[self processRemoteNotification:userInfo];
-}
-
 - (LinphoneChatRoom *)findChatRoomForContact:(NSString *)contact {
 	const MSList *rooms = linphone_core_get_chat_rooms(LC);
 	const char *from = [contact UTF8String];
@@ -510,49 +398,6 @@
 		rooms = rooms->next;
 	}
 	return NULL;
-}
-
-#pragma mark - PushNotification Functions
-
-- (void)application:(UIApplication *)application
-	didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-	LOGI(@"%@ : %@", NSStringFromSelector(_cmd), deviceToken);
-	[LinphoneManager.instance setPushNotificationToken:deviceToken];
-}
-
-- (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
-	LOGI(@"%@ : %@", NSStringFromSelector(_cmd), [error localizedDescription]);
-	[LinphoneManager.instance setPushNotificationToken:nil];
-}
-
-#pragma mark - PushKit Functions
-
-- (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type {
-	LOGI(@"[PushKit] credentials updated with voip token: %@", credentials.token);
-	dispatch_async(dispatch_get_main_queue(), ^{
-		[LinphoneManager.instance setPushNotificationToken:credentials.token];
-	});
-}
-
-- (void)pushRegistry:(PKPushRegistry *)registry didInvalidatePushTokenForType:(NSString *)type {
-    LOGI(@"[PushKit] Token invalidated");
-    dispatch_async(dispatch_get_main_queue(), ^{[LinphoneManager.instance setPushNotificationToken:nil];});
-}
-
-- (void)processPush:(NSDictionary *)userInfo {
-	LOGI(@"[PushKit] Notification [%p] received with pay load : %@", userInfo, userInfo.description);
-	[self configureUINotification];
-	//to avoid IOS to suspend the app before being able to launch long running task
-	[self processRemoteNotification:userInfo];
-}
-
-- (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(PKPushType)type withCompletionHandler:(void (^)(void))completion {
-	[self processPush:payload.dictionaryPayload];
-	dispatch_async(dispatch_get_main_queue(), ^{completion();});
-}
-
-- (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(NSString *)type {
-	[self processPush:payload.dictionaryPayload];
 }
 
 #pragma mark - UNUserNotifications Framework

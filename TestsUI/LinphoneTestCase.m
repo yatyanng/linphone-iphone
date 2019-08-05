@@ -141,7 +141,6 @@
 		linphone_core_add_auth_info(lc, testAuth);
 		linphone_core_add_proxy_config(lc, testProxy);
 		linphone_core_set_default_proxy_config(lc, testProxy);
-		[[LinphoneManager instance] configurePushTokenForProxyConfig:testProxy];
 
 		linphone_proxy_config_unref(testProxy);
 		linphone_auth_info_unref(testAuth);

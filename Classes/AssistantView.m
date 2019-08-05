@@ -382,8 +382,6 @@ static UICompositeViewDescription *compositeDescription = nil;
 }
 
 - (void)configureProxyConfig {
-	LinphoneManager *lm = LinphoneManager.instance;
-
 	if (!linphone_core_is_network_reachable(LC)) {
 		UIAlertController *errView = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Network Error", nil)
 																		 message:NSLocalizedString(@"There is no network connection available, enable "
@@ -412,7 +410,6 @@ static UICompositeViewDescription *compositeDescription = nil;
 	new_config = linphone_account_creator_create_proxy_config(account_creator);
 
 	if (new_config) {
-		[lm configurePushTokenForProxyConfig:new_config];
 		linphone_core_set_default_proxy_config(LC, new_config);
 		// reload address book to prepend proxy config domain to contacts' phone number
 		// todo: STOP doing that!
@@ -1391,7 +1388,6 @@ void assistant_is_account_linked(LinphoneAccountCreator *creator, LinphoneAccoun
 		linphone_address_unref(tmpAddr);
 
 		if (config) {
-			[[LinphoneManager instance] configurePushTokenForProxyConfig:config];
 			if (linphone_core_add_proxy_config(LC, config) != -1) {
 				linphone_core_set_default_proxy_config(LC, config);
 				// reload address book to prepend proxy config domain to contacts' phone number

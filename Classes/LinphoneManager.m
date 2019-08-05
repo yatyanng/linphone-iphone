@@ -474,7 +474,6 @@ static int check_should_migrate_images(void *data, int argc, char **argv, char *
 		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
 		while (proxies) {
 			linphone_proxy_config_set_ref_key(proxies->data, "push_notification");
-			[self configurePushTokenForProxyConfig:proxies->data];
 			proxies = proxies->next;
 		}
 	}
@@ -947,14 +946,6 @@ static void linphone_iphone_configuring_status_changed(LinphoneCore *lc, Linphon
 }
 
 - (void)configuringStateChangedNotificationHandler:(NSNotification *)notif {
-	_wasRemoteProvisioned = ((LinphoneConfiguringState)[[[notif userInfo] valueForKey:@"state"] integerValue] ==
-				 LinphoneConfiguringSuccessful);
-	if (_wasRemoteProvisioned) {
-		LinphoneProxyConfig *cfg = linphone_core_get_default_proxy_config(LC);
-		if (cfg) {
-			[self configurePushTokenForProxyConfig:cfg];
-		}
-	}
 }
 
 #pragma mark - Registration State Functions
@@ -1843,6 +1834,14 @@ void popup_link_account_cb(LinphoneAccountCreator *creator, LinphoneAccountCreat
 
 	theLinphoneCore = linphone_factory_create_core_with_config_3(factory, _configDb, NULL);
 	linphone_core_add_callbacks(theLinphoneCore, cbs);
+#ifdef DEBUG
+#define APPMODE_SUFFIX @"dev"
+#else
+#define APPMODE_SUFFIX @"prod"
+#endif
+	NSString *params = [NSString stringWithFormat:@"%@.voip.%@", [[NSBundle mainBundle] bundleIdentifier], APPMODE_SUFFIX];
+	linphone_core_set_push_notification_application_id(theLinphoneCore, params.UTF8String);
+	
 	linphone_core_start(theLinphoneCore);
 
 	// Let the core handle cbs
@@ -2021,77 +2020,6 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 		}];
 	LOGI(@"Long running task started, remaining [%@] because at least one call is paused",
 	     [LinphoneUtils intervalToString:[[UIApplication sharedApplication] backgroundTimeRemaining]]);
-}
-
-- (void)startPushLongRunningTask:(NSString *)loc_key callId:(NSString *)callId {
-	if (!callId)
-		return;
-
-	if ([callId isEqualToString:@""])
-		return;
-
-	if ([loc_key isEqualToString:@"IM_MSG"]) {
-		[[UIApplication sharedApplication] endBackgroundTask:pushBgTaskMsg];
-		pushBgTaskMsg = 0;
-		pushBgTaskMsg = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-				if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
-					LOGW(@"Incomming message with call-id [%@] couldn't be received", callId);
-					UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-					content.title = NSLocalizedString(@"Message received", nil);
-					content.body = NSLocalizedString(@"You have received a message.", nil);
-					content.categoryIdentifier = @"push_msg";
-
-					UNNotificationRequest *req =
-					[UNNotificationRequest requestWithIdentifier:@"push_msg" content:content trigger:NULL];
-					[[UNUserNotificationCenter currentNotificationCenter]
-					 addNotificationRequest:req
-					 withCompletionHandler:^(NSError *_Nullable error) {
-							// Enable or disable features based on authorization.
-							if (error) {
-								LOGD(@"Error while adding notification request :");
-								LOGD(error.description);
-							}
-						}];
-				}
-				for (NSString *key in [LinphoneManager.instance.pushDict allKeys]) {
-					[LinphoneManager.instance.pushDict setValue:[NSNumber numberWithInt:0] forKey:key];
-				}
-				[[UIApplication sharedApplication] endBackgroundTask:pushBgTaskMsg];
-				pushBgTaskMsg = 0;
-			}];
-		LOGI(@"Message long running task started for call-id [%@], remaining [%@] because a push has been received",
-		     callId, [LinphoneUtils intervalToString:[[UIApplication sharedApplication] backgroundTimeRemaining]]);
-	} else if ([loc_key isEqualToString:@"IC_MSG"]) {
-		[[UIApplication sharedApplication] endBackgroundTask:pushBgTaskCall];
-		pushBgTaskCall = 0;
-		pushBgTaskCall = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-				//does not make sens to notify user as we have no information on this missed called
-				for (NSString *key in [LinphoneManager.instance.pushDict allKeys]) {
-					[LinphoneManager.instance.pushDict setValue:[NSNumber numberWithInt:0] forKey:key];
-				}
-				[[UIApplication sharedApplication] endBackgroundTask:pushBgTaskCall];
-				pushBgTaskCall = 0;
-			}];
-		LOGI(@"Call long running task started for call-id [%@], remaining [%@] because a push has been received",
-		     callId, [LinphoneUtils intervalToString:[[UIApplication sharedApplication] backgroundTimeRemaining]]);
-	} else if ([loc_key isEqualToString:@"IC_SIL"]) {
-		[[UIApplication sharedApplication] endBackgroundTask:pushBgTaskRefer];
-		pushBgTaskRefer = 0;
-		pushBgTaskRefer = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-				// Could be or not an error since the app doesn't know when to end the background task for a REFER
-				// TODO: Manage pushes in the SDK
-				if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive)
-					LOGI(@"Incomming refer long running task with call-id [%@] has expired", callId);
-
-				for (NSString *key in [LinphoneManager.instance.pushDict allKeys]) {
-					[LinphoneManager.instance.pushDict setValue:[NSNumber numberWithInt:0] forKey:key];
-				}
-				[[UIApplication sharedApplication] endBackgroundTask:pushBgTaskRefer];
-				pushBgTaskRefer = 0;
-			}];
-		LOGI(@"Refer long running task started for call-id [%@], remaining [%@] because a push has been received",
-		     callId, [LinphoneUtils intervalToString:[[UIApplication sharedApplication] backgroundTimeRemaining]]);
-	}
 }
 
 - (void)enableProxyPublish:(BOOL)enabled {
@@ -2561,76 +2489,6 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 	linphone_call_params_destroy(lcallParams);
     
 	return TRUE;
-}
-
-#pragma mark - Property Functions
-
-- (void)setPushNotificationToken:(NSData *)apushNotificationToken {
-	if (apushNotificationToken == _pushNotificationToken) {
-		return;
-	}
-	_pushNotificationToken = apushNotificationToken;
-
-	@try {
-		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
-		while (proxies) {
-			[self configurePushTokenForProxyConfig:proxies->data];
-			proxies = proxies->next;
-		}
-	} @catch (NSException* e) {
-		LOGW(@"%s: linphone core not ready yet, ignoring push token", __FUNCTION__);
-	}
-}
-
-- (void)configurePushTokenForProxyConfig:(LinphoneProxyConfig *)proxyCfg {
-	linphone_proxy_config_edit(proxyCfg);
-
-	NSData *tokenData = _pushNotificationToken;
-	const char *refkey = linphone_proxy_config_get_ref_key(proxyCfg);
-	BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
-	if (tokenData != nil && pushNotifEnabled) {
-		const unsigned char *tokenBuffer = [tokenData bytes];
-		NSMutableString *tokenString = [NSMutableString stringWithCapacity:[tokenData length] * 2];
-		for (int i = 0; i < [tokenData length]; ++i) {
-			[tokenString appendFormat:@"%02X", (unsigned int)tokenBuffer[i]];
-		}
-		// NSLocalizedString(@"IC_MSG", nil); // Fake for genstrings
-		// NSLocalizedString(@"IM_MSG", nil); // Fake for genstrings
-		// NSLocalizedString(@"IM_FULLMSG", nil); // Fake for genstrings
-#ifdef DEBUG
-#define APPMODE_SUFFIX @"dev"
-#else
-#define APPMODE_SUFFIX @"prod"
-#endif
-		NSString *ring =
-			([LinphoneManager bundleFile:[self lpConfigStringForKey:@"local_ring" inSection:@"sound"].lastPathComponent]
-			 ?: [LinphoneManager bundleFile:@"notes_of_the_optimistic.caf"])
-			.lastPathComponent;
-
-		NSString *timeout;
-		if (floor(NSFoundationVersionNumber) > NSFoundationVersionNumber_iOS_9_x_Max) {
-			timeout = @";pn-timeout=0";
-		} else {
-			timeout = @"";
-		}
-
-		NSString *params = [NSString
-				    stringWithFormat:@"app-id=%@.voip.%@;pn-type=apple;pn-tok=%@;pn-msg-str=IM_MSG;pn-call-str=IC_MSG;pn-"
-				    @"call-snd=%@;pn-msg-snd=msg.caf%@;pn-silent=1",
-				    [[NSBundle mainBundle] bundleIdentifier], APPMODE_SUFFIX, tokenString, ring, timeout];
-
-		LOGI(@"Proxy config %s configured for push notifications with contact: %@",
-		     linphone_proxy_config_get_identity(proxyCfg), params);
-		linphone_proxy_config_set_contact_uri_parameters(proxyCfg, [params UTF8String]);
-		linphone_proxy_config_set_contact_parameters(proxyCfg, NULL);
-	} else {
-		LOGI(@"Proxy config %s NOT configured for push notifications", linphone_proxy_config_get_identity(proxyCfg));
-		// no push token:
-		linphone_proxy_config_set_contact_uri_parameters(proxyCfg, NULL);
-		linphone_proxy_config_set_contact_parameters(proxyCfg, NULL);
-	}
-
-	linphone_proxy_config_done(proxyCfg);
 }
 
 #pragma mark - Misc Functions
