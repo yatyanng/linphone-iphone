@@ -451,11 +451,17 @@ static RootViewManager *rootViewManagerInstance = nil;
 			}
 			break;
 		}
+        case LinphoneCallReleased:
+            if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [LinphoneManager.instance stopLinphoneCore];
+                });
+            }
+            break;
 		case LinphoneCallOutgoingRinging:
 		case LinphoneCallPaused:
 		case LinphoneCallPausing:
 		case LinphoneCallRefered:
-		case LinphoneCallReleased:
 			break;
 		case LinphoneCallResuming: {
 			if (floor(NSFoundationVersionNumber) > NSFoundationVersionNumber_iOS_9_x_Max && call) {
