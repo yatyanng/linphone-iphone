@@ -14,6 +14,7 @@ import linphonesw
 var GROUP_ID = "group.org.linphone.phone.msgNotification"
 var isReplySent: Bool = false
 var needToStop: Bool = false
+var coreStopped: Bool = false
 var log: LoggingService!
 
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
@@ -94,6 +95,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         if let room = room {
             room.markAsRead()
         }
+        lc!.iterate()
     }
 
     func replyAction(_ userInfo: [AnyHashable : Any], text replyText: String) throws {
@@ -138,11 +140,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     func stopCore() {
-        if let lc = lc {
-            if let coreDelegate = coreDelegate {
-                lc.removeDelegate(delegate: coreDelegate)
-            }
-            lc.stop()
+        lc!.stopAsync()
+        // this iterate is needed: in case of reply there is no async task.
+        // One iterate is needed to set the status of the shared core to Off
+        lc!.iterate()
+        for i in 0...100 where !coreStopped {
+            lc!.iterate()
+            log.debug(msg: "[msgNotificationContent] stop \(i)")
+            usleep(10000)
         }
     }
 
@@ -170,6 +175,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             log.message(msg: "[msgNotificationContent] global state changed: \(gstate) : \(message) \n")
             if (gstate == .Shutdown) {
                 needToStop = true
+            } else if (gstate == .Off) {
+                coreStopped = true
             }
         }
 
