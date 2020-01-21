@@ -1761,8 +1761,21 @@ void popup_link_account_cb(LinphoneAccountCreator *creator, LinphoneAccountCreat
 }
 
 - (void)stopLinphoneCore {
-    linphone_core_stop([LinphoneManager getLc]);
     [mIterateTimer invalidate];
+
+    LinphoneProxyConfig *proxyCfg = linphone_core_get_default_proxy_config([LinphoneManager getLc]);
+//    disable presence
+//    [self enableProxyPublish:NO]; // TODO PAUL: needed?
+
+    if (proxyCfg) {
+        const char *refkey = proxyCfg ? linphone_proxy_config_get_ref_key(proxyCfg) : NULL;
+        BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
+        if ([LinphoneManager.instance lpConfigBoolForKey:@"backgroundmode_preference"] || pushNotifEnabled) {
+            linphone_core_set_network_reachable([LinphoneManager getLc], FALSE);
+        }
+    }
+
+    linphone_core_stop([LinphoneManager getLc]);
 }
 
 - (void)createLinphoneCore {
