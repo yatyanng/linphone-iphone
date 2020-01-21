@@ -1555,14 +1555,7 @@ static void linphone_iphone_is_composing_received(LinphoneCore *lc, LinphoneChat
 
 // scheduling loop
 - (void)iterate {
-	UIBackgroundTaskIdentifier coreIterateTaskId = 0;
-	coreIterateTaskId = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-			LOGW(@"Background task for core iteration launching expired.");
-			[[UIApplication sharedApplication] endBackgroundTask:coreIterateTaskId];
-		}];
 	linphone_core_iterate(theLinphoneCore);
-	if (coreIterateTaskId != UIBackgroundTaskInvalid)
-		[[UIApplication sharedApplication] endBackgroundTask:coreIterateTaskId];
 }
 
 - (void)audioSessionInterrupted:(NSNotification *)notification {
