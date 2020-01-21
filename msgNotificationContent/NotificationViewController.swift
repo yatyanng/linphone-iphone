@@ -46,6 +46,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         needToStop = false
         isReplySent = false
+        coreStopped = false
     }
 
     func didReceive(_ notification: UNNotification) {
@@ -150,7 +151,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         for i in 0...100 where !coreStopped {
             lc!.iterate()
             log.debug(msg: "[msgNotificationContent] stop \(i)")
-            usleep(10000)
+            usleep(50000)
         }
     }
 
