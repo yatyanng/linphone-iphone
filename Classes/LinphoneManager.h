@@ -161,6 +161,7 @@ typedef struct _LinphoneManagerSounds {
 - (void)call:(const LinphoneAddress *)address;
 - (BOOL)doCall:(const LinphoneAddress *)iaddr;
 - (BOOL)doCallWithSas:(const LinphoneAddress *)iaddr isSas:(BOOL)isSas;
+- (void)terminateCall:(LinphoneCall *)call;
 
 +(id)getMessageAppDataForKey:(NSString*)key inMessage:(LinphoneChatMessage*)msg;
 +(void)setValueInMessageAppData:(id)value forKey:(NSString*)key inMessage:(LinphoneChatMessage*)msg;

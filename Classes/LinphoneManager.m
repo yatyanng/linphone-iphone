@@ -2528,6 +2528,13 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 	return TRUE;
 }
 
+- (void)terminateCall:(LinphoneCall *)call {// TODO PAUL : needs to be tested with CallKit changes
+    linphone_call_terminate(call);
+    if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+        [LinphoneManager.instance stopLinphoneCore];
+    }
+}
+
 #pragma mark - Property Functions
 
 - (void)setPushNotificationToken:(NSData *)apushNotificationToken {

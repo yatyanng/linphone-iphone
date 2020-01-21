@@ -862,7 +862,7 @@ static RootViewManager *rootViewManagerInstance = nil;
 }
 
 - (void)incomingCallDeclined:(LinphoneCall *)call {
-	linphone_call_terminate(call);
+    [LinphoneManager.instance terminateCall:call];
 }
 
 #pragma mark - Chat room Functions
