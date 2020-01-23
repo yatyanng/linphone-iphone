@@ -187,7 +187,7 @@
 	self.voipRegistry.desiredPushTypes = [NSSet setWithObject:PKPushTypeVoIP];
 
     // Register for remote notifications.
-    LOGI(@"[Paul] register for push notif");
+    LOGI(@"[APNs] register for push notif");
     [[UIApplication sharedApplication] registerForRemoteNotifications];
 
 	[self configureUINotification];
@@ -571,12 +571,12 @@
 
 - (void)application:(UIApplication *)application
 	didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-	LOGI(@"[Paul] %@ : %@", NSStringFromSelector(_cmd), deviceToken);
-	[LinphoneManager.instance setPushNotificationToken:deviceToken];
+	LOGI(@"[APNs] %@ : %@", NSStringFromSelector(_cmd), deviceToken);
+//	[LinphoneManager.instance setPushNotificationToken:deviceToken]; // TODO PAUL
 }
 
 - (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
-	LOGI(@"[Paul] %@ : %@", NSStringFromSelector(_cmd), [error localizedDescription]);
+	LOGI(@"[APNs] %@ : %@", NSStringFromSelector(_cmd), [error localizedDescription]);
 	[LinphoneManager.instance setPushNotificationToken:nil];
 }
 
@@ -601,7 +601,7 @@
     if ([userInfo[@"aps"][@"loc-key"] isEqualToString:@"IM_MSG"]) { // TODO PAUL: a supprimer, fix temporaire: le serveur n'enverra plus de pushkit pr les msg
         return;
     }
-    [LinphoneManager.instance startLinphoneCore]; // TODO PAUL : a tester
+    [LinphoneManager.instance startLinphoneCore];
     
 	[self configureUINotification];
 	//to avoid IOS to suspend the app before being able to launch long running task
