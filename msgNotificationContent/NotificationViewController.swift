@@ -37,7 +37,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let replyAction = UNTextInputNotificationAction(identifier: "Reply",
                          title: NSLocalizedString("Reply", comment: ""),
                          options: [],
-                         textInputButtonTitle: NSLocalizedString("Send", comment: ""), // TODO PAUL : non traduit ?
+                         textInputButtonTitle: NSLocalizedString("Send", comment: ""),
                          textInputPlaceholder: "")
         
         let seenAction = UNNotificationAction(identifier: "Seen", title: NSLocalizedString("Mark as seen", comment: ""), options: [])
