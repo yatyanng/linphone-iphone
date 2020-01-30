@@ -129,8 +129,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
 
         for i in 0...50 where !isReplySent && !needToStop {
-            lc!.iterate()
             log.debug(msg: "[msgNotificationContent] reply \(i)")
+            lc!.iterate()
             usleep(10000)
         }
     }
@@ -159,10 +159,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         lc!.stopAsync()
         // this iterate is needed: in case of reply there is no async task.
         // One iterate is needed to set the status of the shared core to Off
+        log.debug(msg: "[msgNotificationContent] stop")
         lc!.iterate()
         for i in 0...100 where !coreStopped {
-            lc!.iterate()
             log.debug(msg: "[msgNotificationContent] stop \(i)")
+            lc!.iterate()
             usleep(50000)
         }
     }

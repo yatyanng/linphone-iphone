@@ -640,7 +640,8 @@
 	if (!callId)
 		return;
     
-    [LinphoneManager.instance startLinphoneCore]; // TODO PAUL: par précaution si willenterfg ne passe pas avant
+//    [LinphoneManager.instance startLinphoneCore]; // TODO PAUL: par précaution si willenterfg ne passe pas avant
+    // removed it because it causes the core to start when deleting the notif.
 
 	LinphoneCall *call = [LinphoneManager.instance callByCallId:callId];
 	if (call) {
@@ -715,16 +716,19 @@
 			else
 		  		[PhoneMainView.instance displayIncomingCall:call];
 	  	} else if ([response.notification.request.content.categoryIdentifier isEqual:@"msg_cat"]) {
-		  	NSString *peer_address = [response.notification.request.content.userInfo objectForKey:@"peer_addr"];
-		  	NSString *local_address = [response.notification.request.content.userInfo objectForKey:@"local_addr"];
-		  	LinphoneAddress *peer = linphone_address_new(peer_address.UTF8String);
-		  	LinphoneAddress *local = linphone_address_new(local_address.UTF8String);
-		  	LinphoneChatRoom *room = linphone_core_find_chat_room(LC, peer, local);
-		  	if (room) {
-				[PhoneMainView.instance goToChatRoom:room];
-			  	return;
-		  	}
-		  	[PhoneMainView.instance changeCurrentView:ChatsListView.compositeViewDescription];
+            // prevent to go to chat room view when removing the notif
+			if (![response.actionIdentifier isEqualToString:@"com.apple.UNNotificationDismissActionIdentifier"]) {
+				NSString *peer_address = [response.notification.request.content.userInfo objectForKey:@"peer_addr"];
+				NSString *local_address = [response.notification.request.content.userInfo objectForKey:@"local_addr"];
+				LinphoneAddress *peer = linphone_address_new(peer_address.UTF8String);
+				LinphoneAddress *local = linphone_address_new(local_address.UTF8String);
+				LinphoneChatRoom *room = linphone_core_find_chat_room(LC, peer, local);
+				if (room) {
+					[PhoneMainView.instance goToChatRoom:room];
+					return;
+				}
+				[PhoneMainView.instance changeCurrentView:ChatsListView.compositeViewDescription];
+			}
 		} else if ([response.notification.request.content.categoryIdentifier isEqual:@"video_request"]) {
 			[PhoneMainView.instance changeCurrentView:CallView.compositeViewDescription];
 		  	NSTimer *videoDismissTimer = nil;

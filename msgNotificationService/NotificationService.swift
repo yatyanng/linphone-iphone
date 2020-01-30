@@ -91,7 +91,7 @@ class NotificationService: UNNotificationServiceExtension {
     override func serviceExtensionTimeWillExpire() {
         // Called just before the extension will be terminated by the system.
         // Use this as an opportunity to deliver your "best attempt" at modified content, otherwise the original push payload will be used.
-        stopCore()
+        stopCore() // TODO PAUL : may not be needed
         if let contentHandler = contentHandler, let bestAttemptContent =  bestAttemptContent {
             NSLog("[msgNotificationService] serviceExtensionTimeWillExpire")
             bestAttemptContent.categoryIdentifier = "app_active"
@@ -117,8 +117,8 @@ class NotificationService: UNNotificationServiceExtension {
         lc!.refreshRegisters()
 
         for i in 0...100 where !msgReceived {
-            lc!.iterate()
             log.debug(msg: "[msgNotificationService] \(i)")
+            lc!.iterate()
             usleep(100000)
         }
 
