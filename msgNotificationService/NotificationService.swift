@@ -128,11 +128,11 @@ class NotificationService: UNNotificationServiceExtension {
     }
 
     func stopCore() {
+        log.message(msg: "[msgNotificationService] stop")
         if let lc = lc {
             if let coreDelegate = coreDelegate {
                 lc.removeDelegate(delegate: coreDelegate)
             }
-            lc.networkReachable = false
             lc.stop()
         }
     }

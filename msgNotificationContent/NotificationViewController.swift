@@ -153,9 +153,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     func stopCore() {
-        //TODO PAUL: set network reachable to false to prevent unregister
-        // with stop async not possible, imdn are sent in the linphone_core_stop
-
         lc!.stopAsync()
         // this iterate is needed: in case of reply there is no async task.
         // One iterate is needed to set the status of the shared core to Off

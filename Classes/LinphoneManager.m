@@ -456,6 +456,22 @@ static int check_should_migrate_images(void *data, int argc, char **argv, char *
 		}
 		[self lpConfigSetBool:TRUE forKey:@"lime_migration_done"];
 	}
+
+	if ([self lpConfigBoolForKey:@"push_notification_migration_done"] == FALSE) {
+		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
+		bool_t pushEnabled;
+		while (proxies) {
+			const char *refkey = linphone_proxy_config_get_ref_key(proxies->data);
+			if (refkey) {
+				pushEnabled = (strcmp(refkey, "push_notification") == 0);
+			} else {
+				pushEnabled = true;
+			}
+			linphone_proxy_config_set_push_notification_allowed(proxies->data, pushEnabled);
+			proxies = proxies->next;
+		}
+		[self lpConfigSetBool:TRUE forKey:@"push_notification_migration_done"];
+	}
 }
 
 - (void)migrationPerAccount {
@@ -480,7 +496,7 @@ static int check_should_migrate_images(void *data, int argc, char **argv, char *
 		[self lpConfigSetBool:NO forKey:@"pushnotification_preference"];
 		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
 		while (proxies) {
-			linphone_proxy_config_set_ref_key(proxies->data, "push_notification");
+			linphone_proxy_config_set_push_notification_allowed(proxies->data, true);
 			[self configurePushTokenForProxyConfig:proxies->data];
 			proxies = proxies->next;
 		}
@@ -1763,19 +1779,6 @@ void popup_link_account_cb(LinphoneAccountCreator *creator, LinphoneAccountCreat
 
 - (void)stopLinphoneCore {
     [mIterateTimer invalidate];
-
-    LinphoneProxyConfig *proxyCfg = linphone_core_get_default_proxy_config([LinphoneManager getLc]);
-//    disable presence
-//    [self enableProxyPublish:NO]; // TODO PAUL: needed?
-
-    if (proxyCfg) {
-        const char *refkey = proxyCfg ? linphone_proxy_config_get_ref_key(proxyCfg) : NULL;
-        BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
-        if ([LinphoneManager.instance lpConfigBoolForKey:@"backgroundmode_preference"] || pushNotifEnabled) {
-            linphone_core_set_network_reachable([LinphoneManager getLc], FALSE);
-        }
-    }
-
     linphone_core_stop([LinphoneManager getLc]);
 }
 
@@ -2114,8 +2117,7 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 
 	// handle proxy config if any
 	if (proxyCfg) {
-		const char *refkey = proxyCfg ? linphone_proxy_config_get_ref_key(proxyCfg) : NULL;
-		BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
+		BOOL pushNotifEnabled = linphone_proxy_config_is_push_notification_allowed(proxyCfg);
 		if ([LinphoneManager.instance lpConfigBoolForKey:@"backgroundmode_preference"] || pushNotifEnabled) {
 			if (floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_9_x_Max) {
 				// For registration register
@@ -2169,8 +2171,7 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 
 	LOGI(@"Entering [%s] bg mode", shouldEnterBgMode ? "normal" : "lite");
 	if (!shouldEnterBgMode && floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_9_x_Max) {
-		const char *refkey = proxyCfg ? linphone_proxy_config_get_ref_key(proxyCfg) : NULL;
-		BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
+		BOOL pushNotifEnabled = linphone_proxy_config_is_push_notification_allowed(proxyCfg);
 		if (pushNotifEnabled) {
 			LOGI(@"Keeping lc core to handle push");
 			return YES;
@@ -2592,8 +2593,7 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 
 	NSData *remoteTokenData = _remoteNotificationToken;
     NSData *PKTokenData = _pushKitToken;
-	const char *refkey = linphone_proxy_config_get_ref_key(proxyCfg);
-	BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
+	BOOL pushNotifEnabled = linphone_proxy_config_is_push_notification_allowed(proxyCfg);
 	if ((remoteTokenData != nil || PKTokenData != nil) && pushNotifEnabled) {
 
         const unsigned char *remoteTokenBuffer = [remoteTokenData bytes];
