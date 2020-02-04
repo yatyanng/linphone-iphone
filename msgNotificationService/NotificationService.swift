@@ -31,23 +31,14 @@ struct MsgData: Codable {
     var peerAddr: String?
 }
 
-var msgData: MsgData?
-var msgReceived: Bool = false
-var log: LoggingService!
-
-class NotificationService: UNNotificationServiceExtension {
-
-    enum LinphoneCoreError: Error {
-        case timeout
-    }
+class NotificationService: UNNotificationServiceExtension { // TODO PAUL : add logs
 
     var contentHandler: ((UNNotificationContent) -> Void)?
     var bestAttemptContent: UNMutableNotificationContent?
 
     var lc: Core?
-    var config: Config!
     var logDelegate: LinphoneLoggingServiceManager!
-    var coreDelegate: LinphoneCoreManager!
+	var log: LoggingService!
 
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         self.contentHandler = contentHandler
@@ -55,14 +46,20 @@ class NotificationService: UNNotificationServiceExtension {
         NSLog("[msgNotificationService] start msgNotificationService extension")
 
         if let bestAttemptContent = bestAttemptContent {
-            do {
-                try startCore()
+			let config = Config.newWithFactory(configFilename: FileManager.preferenceFile(file: "linphonerc").path, factoryConfigFilename: "")
+			setCoreLogger(config: config!)
+			lc = try! Factory.Instance.createSharedCoreWithConfig(config: config!, systemContext: nil, appGroup: GROUP_ID, mainCore: false)
+
+			let message = lc!.pushNotificationMessage
+
+			if let message = message, let chatRoom = message.chatRoom {
+				let msgData = parseMessage(room: chatRoom, message: message)
 
                 if let badge = updateBadge() as NSNumber? {
                     bestAttemptContent.badge = badge
                 }
 
-                stopCore()
+				lc!.stop()
 
                 bestAttemptContent.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: "msg.caf"))
                 bestAttemptContent.title = NSLocalizedString("Message received", comment: "") + " [extension]"
@@ -81,17 +78,16 @@ class NotificationService: UNNotificationServiceExtension {
                 bestAttemptContent.userInfo.updateValue(msgData?.localAddr as Any, forKey: "local_addr")
 
                 contentHandler(bestAttemptContent)
-            } catch {
-                NSLog("[msgNotificationService] failed to start shared core")
-                serviceExtensionTimeWillExpire()
-            }
+			} else {
+				serviceExtensionTimeWillExpire()
+			}
         }
     }
 
     override func serviceExtensionTimeWillExpire() {
         // Called just before the extension will be terminated by the system.
         // Use this as an opportunity to deliver your "best attempt" at modified content, otherwise the original push payload will be used.
-        stopCore() // TODO PAUL : may not be needed
+		lc?.stop() // TODO PAUL : may not be needed
         if let contentHandler = contentHandler, let bestAttemptContent =  bestAttemptContent {
             NSLog("[msgNotificationService] serviceExtensionTimeWillExpire")
             bestAttemptContent.categoryIdentifier = "app_active"
@@ -101,41 +97,40 @@ class NotificationService: UNNotificationServiceExtension {
         }
     }
 
-    func startCore() throws {
-        msgReceived = false
+	func parseMessage(room: ChatRoom, message: ChatMessage) -> MsgData? {
+		log.message(msg: "[msgNotificationService] Core received msg \(message.contentType) \n")
 
-        config = Config.newWithFactory(configFilename: FileManager.preferenceFile(file: "linphonerc").path, factoryConfigFilename: "")
-        setCoreLogger(config: config)
-        lc = try! Factory.Instance.createSharedCoreWithConfig(config: config, systemContext: nil, appGroup: GROUP_ID, mainCore: false)
+		if (message.contentType != "text/plain" && message.contentType != "image/jpeg") {
+			return nil
+		}
 
-        coreDelegate = LinphoneCoreManager(self)
-        lc!.addDelegate(delegate: coreDelegate)
+		let content = message.isText ? message.textContent : "🗻"
+		let from = message.fromAddress?.username
+		let callId = message.getCustomHeader(headerName: "Call-Id")
+		let localUri = room.localAddress?.asStringUriOnly()
+		let peerUri = room.peerAddress?.asStringUriOnly()
 
-        try lc!.start()
+		var msgData = MsgData(from: from, body: "", subtitle: "", callId:callId, localAddr: localUri, peerAddr:peerUri)
 
-        log.message(msg: "[msgNotificationService] core started")
-        lc!.refreshRegisters()
+		if let showMsg = lc!.config?.getBool(section: "app", key: "show_msg_in_notif", defaultValue: true), showMsg == true {
+			if let subject = room.subject as String?, subject != "" {
+				msgData.subtitle = subject
+				msgData.body = from! + " : " + content
+			} else {
+				msgData.subtitle = from
+				msgData.body = content
+			}
+		} else {
+			if let subject = room.subject as String?, subject != "" {
+				msgData.body = subject + " : " + from!
+			} else {
+				msgData.body = from
+			}
+		}
 
-        for i in 0...100 where !msgReceived {
-            log.debug(msg: "[msgNotificationService] \(i)")
-            lc!.iterate()
-            usleep(100000)
-        }
-
-        if (!msgReceived) {
-            throw LinphoneCoreError.timeout
-        }
-    }
-
-    func stopCore() {
-        log.message(msg: "[msgNotificationService] stop")
-        if let lc = lc {
-            if let coreDelegate = coreDelegate {
-                lc.removeDelegate(delegate: coreDelegate)
-            }
-            lc.stop()
-        }
-    }
+		log.message(msg: "[msgNotificationService] msg: \(content) \n")
+		return msgData;
+	}
 
     func setCoreLogger(config: Config) {
         let debugLevel = config.getInt(section: "app", key: "debugenable_preference", defaultValue: LogLevel.Debug.rawValue)
@@ -160,86 +155,30 @@ class NotificationService: UNNotificationServiceExtension {
         return count
     }
 
+	class LinphoneLoggingServiceManager: LoggingServiceDelegate {
+		override func onLogMessageWritten(logService: LoggingService, domain: String, lev: LogLevel, message: String) {
+			let level: String
 
-    class LinphoneCoreManager: CoreDelegate {
-        unowned let parent: NotificationService
+			switch lev {
+			case .Debug:
+				level = "Debug"
+			case .Trace:
+				level = "Trace"
+			case .Message:
+				level = "Message"
+			case .Warning:
+				level = "Warning"
+			case .Error:
+				level = "Error"
+			case .Fatal:
+				level = "Fatal"
+			default:
+				level = "unknown"
+			}
 
-        init(_ parent: NotificationService) {
-            self.parent = parent
-        }
-
-        override func onGlobalStateChanged(lc: Core, gstate: GlobalState, message: String) {
-            log.message(msg: "[msgNotificationService] onGlobalStateChanged \(gstate) : \(message) \n")
-            if (gstate == .Shutdown) {
-                parent.serviceExtensionTimeWillExpire()
-            }
-        }
-
-        override func onRegistrationStateChanged(lc: Core, cfg: ProxyConfig, cstate: RegistrationState, message: String?) {
-            log.message(msg: "[msgNotificationService] New registration state \(cstate) for user id \( String(describing: cfg.identityAddress?.asString()))\n")
-        }
-
-        override func onMessageReceived(lc: Core, room: ChatRoom, message: ChatMessage) {
-            log.message(msg: "[msgNotificationService] Core received msg \(message.contentType) \n")
-            // content.userInfo = @{@"from" : from, @"peer_addr" : peer_uri, @"local_addr" : local_uri, @"CallId" : callID, @"msgs" : msgs};
-
-            if (message.contentType != "text/plain" && message.contentType != "image/jpeg") {
-                return
-            }
-
-            let content = message.isText ? message.textContent : "🗻"
-            let from = message.fromAddress?.username
-            let callId = message.getCustomHeader(headerName: "Call-Id")
-            let localUri = room.localAddress?.asStringUriOnly()
-            let peerUri = room.peerAddress?.asStringUriOnly()
-
-            msgData = MsgData(from: from, body: "", subtitle: "", callId:callId, localAddr: localUri, peerAddr:peerUri)
-
-            if let showMsg = lc.config?.getBool(section: "app", key: "show_msg_in_notif", defaultValue: true), showMsg == true {
-                if let subject = room.subject as String?, subject != "" {
-                    msgData?.subtitle = subject
-                    msgData?.body = from! + " : " + content
-                } else {
-                    msgData?.subtitle = from
-                    msgData?.body = content
-                }
-            } else {
-                if let subject = room.subject as String?, subject != "" {
-                    msgData?.body = subject + " : " + from!
-                } else {
-                    msgData?.body = from
-                }
-            }
-
-            log.message(msg: "[msgNotificationService] msg: \(content) \n")
-            msgReceived = true
-        }
-    }
-}
-
-class LinphoneLoggingServiceManager: LoggingServiceDelegate {
-    override func onLogMessageWritten(logService: LoggingService, domain: String, lev: LogLevel, message: String) {
-        let level: String
-
-        switch lev {
-        case .Debug:
-            level = "Debug"
-        case .Trace:
-            level = "Trace"
-        case .Message:
-            level = "Message"
-        case .Warning:
-            level = "Warning"
-        case .Error:
-            level = "Error"
-        case .Fatal:
-            level = "Fatal"
-        default:
-            level = "unknown"
-        }
-
-        NSLog("[\(level)] \(message)\n")
-    }
+			NSLog("[\(level)] \(message)\n")
+		}
+	}
 }
 
 extension FileManager {
