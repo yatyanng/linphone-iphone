@@ -261,6 +261,7 @@ struct codec_name_pref_table codec_pref_table[] = {{"speex", 8000, "speex_8k_pre
 		_speakerBeforePause = FALSE;
 		_bluetoothEnabled = FALSE;
 		_conf = FALSE;
+		_canConfigurePushTokenForProxyConfigs = FALSE;
 		_fileTransferDelegates = [[NSMutableArray alloc] init];
 		_linphoneManagerAddressBookMap = [[OrderedDictionary alloc] init];
 		pushCallIDs = [[NSMutableArray alloc] init];
@@ -2550,42 +2551,83 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 
 #pragma mark - Property Functions
 
-- (void)setPushNotificationToken:(NSData *)apushNotificationToken {
-	if (apushNotificationToken == _pushNotificationToken) {
+- (void)setPushKitToken:(NSData *)pushKitToken {
+	if (pushKitToken == _pushKitToken) {
 		return;
 	}
-	_pushNotificationToken = apushNotificationToken;
+	_pushKitToken = pushKitToken;
 
-	@try {
-		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
-		while (proxies) {
-			[self configurePushTokenForProxyConfig:proxies->data];
-			proxies = proxies->next;
-		}
-	} @catch (NSException* e) {
-		LOGW(@"%s: linphone core not ready yet, ignoring push token", __FUNCTION__);
-	}
+    [self configurePushTokenForProxyConfigs];
+}
+
+- (void)setRemoteNotificationToken:(NSData *)remoteNotificationToken {
+    if (remoteNotificationToken == _remoteNotificationToken) {
+        return;
+    }
+    _remoteNotificationToken = remoteNotificationToken;
+
+    [self configurePushTokenForProxyConfigs];
+}
+
+- (void)configurePushTokenForProxyConfigs {
+    // we register only when the second token is set
+    if (_canConfigurePushTokenForProxyConfigs) {
+        @try {
+            const MSList *proxies = linphone_core_get_proxy_config_list(LC);
+            while (proxies) {
+                [self configurePushTokenForProxyConfig:proxies->data];
+                proxies = proxies->next;
+            }
+        } @catch (NSException* e) {
+            LOGW(@"%s: linphone core not ready yet, ignoring push token", __FUNCTION__);
+        }
+    } else {
+        _canConfigurePushTokenForProxyConfigs = YES;
+    }
+
 }
 
 - (void)configurePushTokenForProxyConfig:(LinphoneProxyConfig *)proxyCfg {
 	linphone_proxy_config_edit(proxyCfg);
 
-	NSData *tokenData = _pushNotificationToken;
+	NSData *remoteTokenData = _remoteNotificationToken;
+    NSData *PKTokenData = _pushKitToken;
 	const char *refkey = linphone_proxy_config_get_ref_key(proxyCfg);
 	BOOL pushNotifEnabled = (refkey && strcmp(refkey, "push_notification") == 0);
-	if (tokenData != nil && pushNotifEnabled) {
-		const unsigned char *tokenBuffer = [tokenData bytes];
-		NSMutableString *tokenString = [NSMutableString stringWithCapacity:[tokenData length] * 2];
-		for (int i = 0; i < [tokenData length]; ++i) {
-			[tokenString appendFormat:@"%02X", (unsigned int)tokenBuffer[i]];
+	if ((remoteTokenData != nil || PKTokenData != nil) && pushNotifEnabled) {
+
+        const unsigned char *remoteTokenBuffer = [remoteTokenData bytes];
+        NSMutableString *remoteTokenString = [NSMutableString stringWithCapacity:[remoteTokenData length] * 2];
+		for (int i = 0; i < [PKTokenData length]; ++i) {
+			[remoteTokenString appendFormat:@"%02X", (unsigned int)remoteTokenBuffer[i]];
 		}
+
+        const unsigned char *PKTokenBuffer = [PKTokenData bytes];
+        NSMutableString *PKTokenString = [NSMutableString stringWithCapacity:[PKTokenData length] * 2];
+        for (int i = 0; i < [PKTokenData length]; ++i) {
+            [PKTokenString appendFormat:@"%02X", (unsigned int)PKTokenBuffer[i]];
+        }
+
+        NSString *token;
+        NSString *services;
+        if (remoteTokenString && PKTokenString) {
+            token = [NSString stringWithFormat:@"%@:remote&%@:voip", remoteTokenString, PKTokenString];
+            services = @"remote&voip";
+        } else if (remoteTokenString) {
+            token = [NSString stringWithFormat:@"%@:remote", remoteTokenString];
+            services = @"remote";
+        } else {
+            token = [NSString stringWithFormat:@"%@:voip", PKTokenString];
+            services = @"voip";
+        }
+
 		// NSLocalizedString(@"IC_MSG", nil); // Fake for genstrings
 		// NSLocalizedString(@"IM_MSG", nil); // Fake for genstrings
 		// NSLocalizedString(@"IM_FULLMSG", nil); // Fake for genstrings
 #ifdef DEBUG
-#define APPMODE_SUFFIX @"dev"
+#define APPMODE_SUFFIX @".dev"
 #else
-#define APPMODE_SUFFIX @"prod"
+#define APPMODE_SUFFIX @""
 #endif
 		NSString *ring =
 			([LinphoneManager bundleFile:[self lpConfigStringForKey:@"local_ring" inSection:@"sound"].lastPathComponent]
@@ -2599,13 +2641,13 @@ static int comp_call_state_paused(const LinphoneCall *call, const void *param) {
 			timeout = @"";
 		}
 
-		NSString *params = [NSString
-				    stringWithFormat:@"app-id=%@.voip.%@;pn-type=apple;pn-tok=%@;pn-msg-str=IM_MSG;pn-call-str=IC_MSG;pn-"
-				    @"call-snd=%@;pn-msg-snd=msg.caf%@;pn-silent=1",
-				    [[NSBundle mainBundle] bundleIdentifier], APPMODE_SUFFIX, tokenString, ring, timeout];
+        NSString *params = [NSString
+                    stringWithFormat:@"pn-provider=apns%@;pn-prid=%@;pn-param=ABCD1234.%@.%@;pn-msg-str=IM_MSG;pn-call-str=IC_MSG;pn-"
+                    @"call-snd=%@;pn-msg-snd=msg.caf%@;pn-silent=1",
+                    APPMODE_SUFFIX, token, [[NSBundle mainBundle] bundleIdentifier], services, ring, timeout];
 
 		LOGI(@"Proxy config %s configured for push notifications with contact: %@",
-		     linphone_proxy_config_get_identity(proxyCfg), params);
+		linphone_proxy_config_get_identity(proxyCfg), params);
 		linphone_proxy_config_set_contact_uri_parameters(proxyCfg, [params UTF8String]);
 		linphone_proxy_config_set_contact_parameters(proxyCfg, NULL);
 	} else {

@@ -134,6 +134,7 @@ typedef struct _LinphoneManagerSounds {
 - (void)becomeActive;
 - (BOOL)enterBackgroundMode;
 - (void)addPushCallId:(NSString*) callid;
+- (void)configurePushTokenForProxyConfigs;
 - (void)configurePushTokenForProxyConfig: (LinphoneProxyConfig*)cfg;
 - (BOOL)popPushCallID:(NSString*) callId;
 - (void)acceptCallForCallId:(NSString*)callid;
@@ -217,7 +218,8 @@ typedef struct _LinphoneManagerSounds {
 @property (readonly) const char*  backCamId;
 @property(strong, nonatomic) NSString *SSID;
 @property (readonly) sqlite3* database;
-@property(nonatomic, strong) NSData *pushNotificationToken;
+@property(nonatomic, strong) NSData *pushKitToken;
+@property(nonatomic, strong) NSData *remoteNotificationToken;
 @property (readonly) LinphoneManagerSounds sounds;
 @property (readonly) NSMutableArray *logs;
 @property (nonatomic, assign) BOOL speakerBeforePause;
@@ -236,6 +238,7 @@ typedef struct _LinphoneManagerSounds {
 @property NSDictionary *pushDict;
 @property(strong, nonatomic) OrderedDictionary *linphoneManagerAddressBookMap;
 @property (nonatomic, assign) BOOL contactsUpdated;
+@property (nonatomic, assign) BOOL canConfigurePushTokenForProxyConfigs; // used to register at the right time when receiving push notif tokens
 @property UIImage *avatar;
 
 @end

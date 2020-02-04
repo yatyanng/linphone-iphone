@@ -65,7 +65,7 @@
         // !!! Will be removed after push notification job finished
         // destroyLinphoneCore automatically unregister proxies but if we are using
         // remote push notifications, we want to continue receiving them
-        if (LinphoneManager.instance.pushNotificationToken != nil) {
+        if (LinphoneManager.instance.pushKitToken != nil) {
             // trick me! setting network reachable to false will avoid sending unregister
             const MSList *proxies = linphone_core_get_proxy_config_list(LC);
             BOOL pushNotifEnabled = NO;
@@ -362,7 +362,7 @@
 	// !!! Will be removed after push notification job finished
 	// destroyLinphoneCore automatically unregister proxies but if we are using
 	// remote push notifications, we want to continue receiving them
-	if (LinphoneManager.instance.pushNotificationToken != nil) {
+	if (LinphoneManager.instance.pushKitToken != nil) {
 		// trick me! setting network reachable to false will avoid sending unregister
 		const MSList *proxies = linphone_core_get_proxy_config_list(LC);
 		BOOL pushNotifEnabled = NO;
@@ -572,26 +572,26 @@
 - (void)application:(UIApplication *)application
 	didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
 	LOGI(@"[APNs] %@ : %@", NSStringFromSelector(_cmd), deviceToken);
-//	[LinphoneManager.instance setPushNotificationToken:deviceToken]; // TODO PAUL
+    [LinphoneManager.instance setRemoteNotificationToken:deviceToken];
 }
 
 - (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
 	LOGI(@"[APNs] %@ : %@", NSStringFromSelector(_cmd), [error localizedDescription]);
-	[LinphoneManager.instance setPushNotificationToken:nil];
+	[LinphoneManager.instance setRemoteNotificationToken:nil];
 }
 
 #pragma mark - PushKit Functions
 
 - (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type {
 	LOGI(@"[PushKit] credentials updated with voip token: %@", credentials.token);
-	dispatch_async(dispatch_get_main_queue(), ^{
-		[LinphoneManager.instance setPushNotificationToken:credentials.token];
+	dispatch_async(dispatch_get_main_queue(), ^{ // TODO PAUL : why?
+		[LinphoneManager.instance setPushKitToken:credentials.token];
 	});
 }
 
 - (void)pushRegistry:(PKPushRegistry *)registry didInvalidatePushTokenForType:(NSString *)type {
     LOGI(@"[PushKit] Token invalidated");
-    dispatch_async(dispatch_get_main_queue(), ^{[LinphoneManager.instance setPushNotificationToken:nil];});
+    dispatch_async(dispatch_get_main_queue(), ^{[LinphoneManager.instance setPushKitToken:nil];});
 }
 
 - (void)processPush:(NSDictionary *)userInfo {
